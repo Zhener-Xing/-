@@ -873,7 +873,7 @@
 
               <div class="section-toggle">
                 <div class="badge-secondary">
-                  身份验证 + 审核通过后展示
+                  提交即展示，验证机制后期完善
                 </div>
                 <div class="pill-switch" aria-label="在读分享模式切换">
                   <button id="share-switch-fill" class="active" type="button">我要填写</button>
@@ -884,7 +884,7 @@
               <div class="share-layout">
                 <div id="share-form">
                   <p class="share-note">
-                    当前为前端演示版本：身份验证、人工审核与正式发布需要接入后端服务，这里仅模拟流程。
+                    填写后直接提交即可，即写即展示。
                   </p>
                   <div class="subgrid">
                     <div>
@@ -900,7 +900,7 @@
                       />
                     </div>
                     <div>
-                      <label class="field-label" for="share-city">所在城市</label>
+                      <label class="field-label" for="share-city">城市</label>
                       <input
                         id="share-city"
                         class="input"
@@ -945,26 +945,6 @@
                     placeholder="简单说说你对学校和专业最真实的感受：比如课程压力、同学水平、转专业机会、就业去向、城市生活成本等等。"
                   ></textarea>
 
-                  <label class="field-label" for="share-proof">
-                    学信网学籍截图（必填，用于校验）
-                    <span class="tip">请上传能看到学校名称和姓名打码的截图</span>
-                  </label>
-                  <div class="subgrid">
-                    <div>
-                      <input
-                        id="share-proof"
-                        class="input"
-                        type="file"
-                        accept=".jpg,.jpeg,.png,.webp"
-                      />
-                    </div>
-                    <div>
-                      <span id="share-proof-status" class="helper-text">
-                        尚未选择截图
-                      </span>
-                    </div>
-                  </div>
-
                   <label class="field-label" for="share-tags">
                     标签（可选）
                     <span class="tip">用逗号分隔，例如：转专业友好, 保研机会多</span>
@@ -980,16 +960,10 @@
                     <p class="helper-text">
                       为保护隐私，请勿填写姓名、学号、电话等敏感信息，仅描述学校与专业体验。
                     </p>
-                    <div style="display: flex; gap: 8px;">
-                      <button id="verify-btn" class="primary-btn" type="button">
-                        <span class="icon">✓</span>
-                        完成校验（演示）
-                      </button>
-                      <button id="share-submit" class="primary-btn" type="button">
-                        <span class="icon">⇪</span>
-                        提交
-                      </button>
-                    </div>
+                    <button id="share-submit" class="primary-btn" type="button">
+                      <span class="icon">⇪</span>
+                      提交
+                    </button>
                   </div>
                 </div>
 
@@ -1028,6 +1002,7 @@
                             <th>学校</th>
                             <th>城市</th>
                             <th>专业</th>
+                            <th>高考年份</th>
                             <th>关键词</th>
                           </tr>
                         </thead>
@@ -1284,9 +1259,6 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
       const shareYear = document.getElementById("share-year");
       const shareExperience = document.getElementById("share-experience");
       const shareTags = document.getElementById("share-tags");
-      const shareProof = document.getElementById("share-proof");
-      const shareProofStatus = document.getElementById("share-proof-status");
-      const verifyBtn = document.getElementById("verify-btn");
       const shareSubmit = document.getElementById("share-submit");
       const shareListBody = document.getElementById("share-list-body");
       const filterChips = document.querySelectorAll(".filter-chip");
@@ -1300,7 +1272,6 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
 
       const STORAGE_KEY = "gaokao-mentor-profile-v1";
       const SHARE_KEY = "gaokao-mentor-share-v1";
-      const VERIFIED_KEY = "gaokao-mentor-verified-v1";
 
       function buildSummary() {
         summaryTags.innerHTML = "";
@@ -1422,9 +1393,7 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
         }
       );
 
-      // 在读分享：本地模拟的验证与共享表
-      let isVerified = false;
-      let isAiReviewPassed = false;
+      // 在读分享：即写即上传，验证机制后期完善
       let activeFilterTags = [];
 
       const FILTER_SYNONYMS = {
@@ -1476,27 +1445,6 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
         } catch (e) {
           console.error(e);
           shareEntries = getPresetShares();
-        }
-      }
-
-      function loadVerifiedStatus() {
-        try {
-          const v = localStorage.getItem(VERIFIED_KEY);
-          if (v === "1") {
-            isVerified = true;
-            isAiReviewPassed = true;
-            if (verifyBtn) {
-              verifyBtn.innerHTML = '<span class="icon">✓</span> 已通过学信网认证';
-              verifyBtn.disabled = true;
-            }
-            if (shareProofStatus) {
-              shareProofStatus.textContent =
-                "本设备已完成学信网截图验证，后续再次分享无需重复上传截图。";
-              shareProofStatus.style.color = "#16a34a";
-            }
-          }
-        } catch (e) {
-          console.error(e);
         }
       }
 
@@ -1555,6 +1503,7 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
             <td>${item.school || "-"}</td>
             <td>${item.city || "-"}</td>
             <td>${item.major || "-"}</td>
+            <td>${item.year || "—"}</td>
             <td>${tagsText || "—"}</td>
           `;
           shareListBody.appendChild(tr);
@@ -1606,54 +1555,6 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
         });
       }
 
-      if (shareProof) {
-        shareProof.addEventListener("change", () => {
-          const file = shareProof.files && shareProof.files[0];
-          isAiReviewPassed = false;
-          isVerified = false;
-          if (!file) {
-            shareProofStatus.textContent = "尚未选择截图";
-            shareProofStatus.style.color = "";
-            return;
-          }
-          shareProofStatus.textContent = `已选择：${file.name}，点击下方完成校验`;
-          shareProofStatus.style.color = "#4b5563";
-        });
-      }
-
-      if (verifyBtn) {
-        verifyBtn.addEventListener("click", () => {
-          const file = shareProof && shareProof.files && shareProof.files[0];
-          if (!file) {
-            alert("请先上传学信网学籍截图，再完成校验。");
-            return;
-          }
-          verifyBtn.classList.add("loading");
-          verifyBtn.innerHTML = '<span class="icon">⟳</span> 校验中…';
-          shareProofStatus.textContent = "正在检查截图中是否包含学校名称与在读状态…";
-          shareProofStatus.style.color = "#6b7280";
-
-          // 这里模拟 AI 对截图的校验；接入真实模型时，可将 file 发送到后端进行图像识别与规则审核
-          setTimeout(() => {
-            isVerified = true;
-            isAiReviewPassed = true;
-            verifyBtn.classList.remove("loading");
-            verifyBtn.innerHTML = '<span class="icon">✓</span> 校验通过';
-            verifyBtn.disabled = true;
-            if (shareProofStatus) {
-              shareProofStatus.textContent =
-                "已通过截图校验（演示）。正式环境建议人工抽检。";
-              shareProofStatus.style.color = "#16a34a";
-            }
-            try {
-              localStorage.setItem(VERIFIED_KEY, "1");
-            } catch (e) {
-              console.error(e);
-            }
-          }, 1000);
-        });
-      }
-
       function simulateContentAiModeration(payload) {
         const text = [
           payload.experience || "",
@@ -1682,10 +1583,6 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
 
       if (shareSubmit) {
         shareSubmit.addEventListener("click", () => {
-          if (!isVerified || !isAiReviewPassed) {
-            alert("请先上传学信网截图并完成校验后再提交。");
-            return;
-          }
           const payload = {
             school: shareSchool.value.trim(),
             city: shareCity.value.trim(),
@@ -1697,8 +1594,8 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
               .map((t) => t.trim())
               .filter(Boolean),
           };
-          if (!payload.school || !payload.major || !payload.experience) {
-            alert("请至少填写：学校、专业和你的真实体验。");
+          if (!payload.school || !payload.city || !payload.major || !payload.experience) {
+            alert("请填写：学校、城市、专业和你的真实体验。");
             return;
           }
           if (simulateContentAiModeration(payload)) {
@@ -1710,14 +1607,13 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
           renderShareTable();
           shareExperience.value = "";
           shareTags.value = "";
-          alert("已提交到本地待审核队列。\n正式产品中将由后台进行身份校验与内容审核，再推送给高考生。");
+          alert("已提交，即写即展示。");
         });
       }
 
       // 初始化
       loadProfile();
       loadShares();
-      loadVerifiedStatus();
       setShareMode("fill");
     </script>
   </body>
