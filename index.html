@@ -471,12 +471,38 @@
         font-size: 11px;
       }
 
+      .share-search-row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .share-search-row .input {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .share-result-area {
+        margin-top: 6px;
+      }
+
+      .share-result-area.hidden {
+        display: none;
+      }
+
+      .share-result-meta {
+        font-size: 11px;
+        color: var(--text-soft);
+        margin-bottom: 4px;
+      }
+
       .table-wrapper {
         border-radius: var(--radius);
         border: 1px solid var(--border-subtle);
         background: #f8f7f4;
-        padding: 8px 8px 6px;
-        max-height: 220px;
+        padding: 4px 6px;
+        max-height: 200px;
         overflow: auto;
       }
 
@@ -495,19 +521,19 @@
 
       table.shared-table th,
       table.shared-table td {
-        padding: 5px 6px;
+        padding: 4px 6px;
         text-align: left;
-        border-bottom: 1px dashed rgba(209, 213, 219, 0.7);
+        border-bottom: 1px solid var(--border-subtle);
       }
 
       table.shared-table th {
         font-weight: 500;
-        color: #4b5563;
+        color: var(--text-soft);
         white-space: nowrap;
       }
 
       table.shared-table tbody tr:nth-child(even) {
-        background: rgba(249, 250, 251, 0.8);
+        background: rgba(249, 250, 251, 0.6);
       }
 
       table.shared-table tbody tr:hover {
@@ -518,10 +544,10 @@
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: 6px;
-        margin: 4px 0 8px;
+        gap: 4px;
+        margin: 4px 0 6px;
         font-size: 11px;
-        color: #6b7280;
+        color: var(--text-soft);
       }
 
       .filter-chip {
@@ -969,35 +995,47 @@
 
                 <div id="share-view">
                   <p class="share-note">
-                    已审核通过的分享，可按学校、城市、专业检索。
+                    按学校名称检索，可选关键词缩小范围。
                   </p>
+                  <div class="share-search-row">
+                    <input
+                      id="share-school-search"
+                      class="input"
+                      type="text"
+                      placeholder="输入学校名称"
+                      autocomplete="off"
+                    />
+                    <button id="share-search-btn" class="primary-btn" type="button">检索</button>
+                  </div>
                   <div class="filter-row">
-                    <span>按关键词筛选：</span>
-                    <button class="filter-chip" data-tag="住宿">住宿 / 宿舍</button>
-                    <button class="filter-chip" data-tag="伙食">伙食 / 食堂</button>
-                    <button class="filter-chip" data-tag="学业">学业压力</button>
-                    <button class="filter-chip" data-tag="交换">交换 / 出国</button>
-                    <button class="filter-chip" data-tag="保研">保研机会</button>
-                    <button class="filter-chip" data-tag="实习">实习 / 就业</button>
+                    <span>关键词：</span>
+                    <button class="filter-chip" data-tag="住宿">住宿</button>
+                    <button class="filter-chip" data-tag="伙食">伙食</button>
+                    <button class="filter-chip" data-tag="学业">学业</button>
+                    <button class="filter-chip" data-tag="交换">交换</button>
+                    <button class="filter-chip" data-tag="保研">保研</button>
+                    <button class="filter-chip" data-tag="实习">实习</button>
                   </div>
-                  <div class="table-wrapper">
-                    <table class="shared-table">
-                      <thead>
-                        <tr>
-                          <th>学校</th>
-                          <th>城市</th>
-                          <th>专业</th>
-                          <th>关键词</th>
-                        </tr>
-                      </thead>
-                      <tbody id="share-list-body">
-                        <!-- rows populated by JS -->
-                      </tbody>
-                    </table>
-                  </div>
-                  <p class="muted">
-                    上方筛选为同义词匹配，如「学业」可匹配「学习轻松」「很卷」等。
+                  <p class="muted" id="share-search-hint">
+                    输入学校名称后点击检索，结果将显示在下方面板。
                   </p>
+                  <div id="share-result-area" class="share-result-area hidden">
+                    <p class="share-result-meta" id="share-result-meta"></p>
+                    <div class="table-wrapper">
+                      <table class="shared-table">
+                        <thead>
+                          <tr>
+                            <th>学校</th>
+                            <th>城市</th>
+                            <th>专业</th>
+                            <th>关键词</th>
+                          </tr>
+                        </thead>
+                        <tbody id="share-list-body">
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1252,6 +1290,13 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
       const shareSubmit = document.getElementById("share-submit");
       const shareListBody = document.getElementById("share-list-body");
       const filterChips = document.querySelectorAll(".filter-chip");
+      const shareSchoolSearch = document.getElementById("share-school-search");
+      const shareSearchBtn = document.getElementById("share-search-btn");
+      const shareResultArea = document.getElementById("share-result-area");
+      const shareSearchHint = document.getElementById("share-search-hint");
+      const shareResultMeta = document.getElementById("share-result-meta");
+
+      let shareSchoolQuery = "";
 
       const STORAGE_KEY = "gaokao-mentor-profile-v1";
       const SHARE_KEY = "gaokao-mentor-share-v1";
@@ -1468,8 +1513,19 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
 
       function renderShareTable() {
         if (!shareListBody) return;
-        shareListBody.innerHTML = "";
+
+        const hasSearch = shareSchoolQuery.trim() !== "" || activeFilterTags.length > 0;
+
+        if (!hasSearch) {
+          if (shareResultArea) shareResultArea.classList.add("hidden");
+          if (shareSearchHint) shareSearchHint.style.display = "";
+          shareListBody.innerHTML = "";
+          return;
+        }
+
+        const q = shareSchoolQuery.trim().toLowerCase();
         const visible = shareEntries.filter((item) => {
+          if (q && !(item.school || "").toLowerCase().includes(q)) return false;
           if (!activeFilterTags.length) return true;
           const text =
             (item.experience || "") +
@@ -1481,14 +1537,17 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
             (item.major || "") +
             " " +
             (Array.isArray(item.tags) ? item.tags.join(" ") : item.tags || "");
-
-          // 每个筛选维度（住宿 / 伙食 / 学业 / …）内部按“同义词 OR”，不同维度之间按 “AND”
           return activeFilterTags.every((tagKey) => {
             const synonyms = FILTER_SYNONYMS[tagKey] || [tagKey];
             return synonyms.some((word) => text.includes(word));
           });
         });
 
+        if (shareResultArea) shareResultArea.classList.remove("hidden");
+        if (shareSearchHint) shareSearchHint.style.display = "none";
+        if (shareResultMeta) shareResultMeta.textContent = "共 " + visible.length + " 条";
+
+        shareListBody.innerHTML = "";
         visible.forEach((item) => {
           const tr = document.createElement("tr");
           const tagsText = Array.isArray(item.tags) ? item.tags.join("，") : item.tags || "";
@@ -1512,14 +1571,24 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
           shareSwitchFill.classList.toggle("active", isFill);
           shareSwitchView.classList.toggle("active", !isFill);
         }
-        if (!isFill) {
-          renderShareTable();
-        }
+        if (!isFill) renderShareTable();
       }
 
       if (shareSwitchFill && shareSwitchView) {
         shareSwitchFill.addEventListener("click", () => setShareMode("fill"));
         shareSwitchView.addEventListener("click", () => setShareMode("view"));
+      }
+
+      function runShareSearch() {
+        shareSchoolQuery = shareSchoolSearch ? shareSchoolSearch.value.trim() : "";
+        renderShareTable();
+      }
+
+      if (shareSearchBtn) shareSearchBtn.addEventListener("click", runShareSearch);
+      if (shareSchoolSearch) {
+        shareSchoolSearch.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") runShareSearch();
+        });
       }
 
       if (filterChips && filterChips.length) {
