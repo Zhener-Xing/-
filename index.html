@@ -980,6 +980,7 @@
                       autocomplete="off"
                     />
                     <button id="share-search-btn" class="primary-btn" type="button">检索</button>
+                    <button id="share-refresh-btn" class="primary-btn" type="button" style="background: transparent; color: var(--accent);">刷新</button>
                   </div>
                   <div class="filter-row">
                     <span>关键词：</span>
@@ -1020,6 +1021,9 @@
     </div>
 
     <script>
+      // 后端 API 地址：云服务器上运行 app.js 时的地址（本地调试可改为 http://localhost:3000）
+      const API_BASE = "http://116.62.36.98:3000";
+
       // Tab 切换（左侧只是视觉模式切换，功能本身都在）
       const tabButtons = document.querySelectorAll(".tab");
       const aiPanel = document.getElementById("ai-panel");
@@ -1448,6 +1452,32 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
         }
       }
 
+      // 从云服务器 MySQL 拉取「大家分享」数据
+      function fetchSharesFromServer(callback) {
+        fetch(API_BASE + "/get-data")
+          .then((res) => res.json())
+          .then((result) => {
+            if (result.code === 200 && Array.isArray(result.data)) {
+              shareEntries = result.data.map((row) => ({
+                school: row.school || "",
+                city: row.city || "",
+                major: row.major || "",
+                year: row.gaokao_year != null ? String(row.gaokao_year) : "",
+                experience: row.experience || "",
+                tags: row.label ? String(row.label).split(/[,，]/).map((t) => t.trim()).filter(Boolean) : [],
+              }));
+              if (typeof callback === "function") callback();
+            } else {
+              console.warn("拉取分享数据失败或格式异常", result);
+              if (typeof callback === "function") callback();
+            }
+          })
+          .catch((err) => {
+            console.error("请求分享数据失败", err);
+            if (typeof callback === "function") callback();
+          });
+      }
+
       function saveSharesToLocal(extra) {
         try {
           const raw = localStorage.getItem(SHARE_KEY);
@@ -1462,37 +1492,39 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
       function renderShareTable() {
         if (!shareListBody) return;
 
-        const hasSearch = shareSchoolQuery.trim() !== "" || activeFilterTags.length > 0;
-
-        if (!hasSearch) {
-          if (shareResultArea) shareResultArea.classList.add("hidden");
-          if (shareSearchHint) shareSearchHint.style.display = "";
-          shareListBody.innerHTML = "";
-          return;
-        }
-
+        const hasData = shareEntries.length > 0;
         const q = shareSchoolQuery.trim().toLowerCase();
-        const visible = shareEntries.filter((item) => {
-          if (q && !(item.school || "").toLowerCase().includes(q)) return false;
-          if (!activeFilterTags.length) return true;
-          const text =
-            (item.experience || "") +
-            " " +
-            (item.school || "") +
-            " " +
-            (item.city || "") +
-            " " +
-            (item.major || "") +
-            " " +
-            (Array.isArray(item.tags) ? item.tags.join(" ") : item.tags || "");
-          return activeFilterTags.every((tagKey) => {
-            const synonyms = FILTER_SYNONYMS[tagKey] || [tagKey];
-            return synonyms.some((word) => text.includes(word));
-          });
-        });
+        const visible = hasData
+          ? shareEntries.filter((item) => {
+              if (q && !(item.school || "").toLowerCase().includes(q)) return false;
+              if (!activeFilterTags.length) return true;
+              const text =
+                (item.experience || "") +
+                " " +
+                (item.school || "") +
+                " " +
+                (item.city || "") +
+                " " +
+                (item.major || "") +
+                " " +
+                (Array.isArray(item.tags) ? item.tags.join(" ") : item.tags || "");
+              return activeFilterTags.every((tagKey) => {
+                const synonyms = FILTER_SYNONYMS[tagKey] || [tagKey];
+                return synonyms.some((word) => text.includes(word));
+              });
+            })
+          : [];
 
-        if (shareResultArea) shareResultArea.classList.remove("hidden");
-        if (shareSearchHint) shareSearchHint.style.display = "none";
+        if (shareResultArea) {
+          if (hasData) shareResultArea.classList.remove("hidden");
+          else shareResultArea.classList.add("hidden");
+        }
+        if (shareSearchHint) {
+          shareSearchHint.style.display = "";
+          shareSearchHint.textContent = hasData
+            ? "可输入学校名称检索或点击关键词筛选；切换到此 Tab 时已从服务器加载全部分享。"
+            : "正在加载分享数据…若长时间无数据请检查后端服务与网络。";
+        }
         if (shareResultMeta) shareResultMeta.textContent = "共 " + visible.length + " 条";
 
         shareListBody.innerHTML = "";
@@ -1520,7 +1552,9 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
           shareSwitchFill.classList.toggle("active", isFill);
           shareSwitchView.classList.toggle("active", !isFill);
         }
-        if (!isFill) renderShareTable();
+        if (!isFill) {
+          fetchSharesFromServer(() => renderShareTable());
+        }
       }
 
       if (shareSwitchFill && shareSwitchView) {
@@ -1534,6 +1568,18 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
       }
 
       if (shareSearchBtn) shareSearchBtn.addEventListener("click", runShareSearch);
+      const shareRefreshBtn = document.getElementById("share-refresh-btn");
+      if (shareRefreshBtn) {
+        shareRefreshBtn.addEventListener("click", () => {
+          shareRefreshBtn.disabled = true;
+          shareRefreshBtn.textContent = "加载中…";
+          fetchSharesFromServer(() => {
+            renderShareTable();
+            shareRefreshBtn.disabled = false;
+            shareRefreshBtn.textContent = "刷新";
+          });
+        });
+      }
       if (shareSchoolSearch) {
         shareSchoolSearch.addEventListener("keydown", (e) => {
           if (e.key === "Enter") runShareSearch();
@@ -1583,31 +1629,66 @@ ${hasShare ? "3" : "2"}. **志愿搭配建议**
 
       if (shareSubmit) {
         shareSubmit.addEventListener("click", () => {
-          const payload = {
-            school: shareSchool.value.trim(),
-            city: shareCity.value.trim(),
-            major: shareMajor.value.trim(),
-            year: shareYear.value.trim(),
-            experience: shareExperience.value.trim(),
-            tags: shareTags.value
-              .split(/[,，]/)
-              .map((t) => t.trim())
-              .filter(Boolean),
-          };
-          if (!payload.school || !payload.city || !payload.major || !payload.experience) {
+          const school = shareSchool.value.trim();
+          const city = shareCity.value.trim();
+          const major = shareMajor.value.trim();
+          const year = shareYear.value.trim();
+          const experience = shareExperience.value.trim();
+          const tagsArr = shareTags.value
+            .split(/[,，]/)
+            .map((t) => t.trim())
+            .filter(Boolean);
+          const label = tagsArr.length ? tagsArr.join("，") : "";
+
+          if (!school || !city || !major || !experience) {
             alert("请填写：学校、城市、专业和你的真实体验。");
             return;
           }
-          if (simulateContentAiModeration(payload)) {
+          if (simulateContentAiModeration({ school, city, major, experience, tags: tagsArr })) {
             alert("内容审核未通过：含不适当用语，请修改后再提交。");
             return;
           }
-          saveSharesToLocal(payload);
-          loadShares();
-          renderShareTable();
-          shareExperience.value = "";
-          shareTags.value = "";
-          alert("已提交，即写即展示。");
+
+          const btnHtml = shareSubmit.innerHTML;
+          shareSubmit.classList.add("loading");
+          shareSubmit.disabled = true;
+          shareSubmit.innerHTML = '<span class="icon">⟳</span> 提交中…';
+
+          fetch(API_BASE + "/save-data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              school,
+              major,
+              city,
+              gaokao_year: year || new Date().getFullYear(),
+              experience,
+              label,
+            }),
+          })
+            .then((res) => res.json())
+            .then((result) => {
+              if (result.code === 200) {
+                shareSchool.value = "";
+                shareCity.value = "";
+                shareMajor.value = "";
+                shareYear.value = "";
+                shareExperience.value = "";
+                shareTags.value = "";
+                alert("已提交到服务器，可在「查看大家分享」中查看。");
+              } else {
+                alert("提交失败：" + (result.msg || "请稍后重试"));
+              }
+            })
+            .catch((err) => {
+              console.error(err);
+              alert("网络错误，请检查后端服务是否已启动且地址 " + API_BASE + " 可访问。");
+            })
+            .finally(() => {
+              shareSubmit.classList.remove("loading");
+              shareSubmit.disabled = false;
+              shareSubmit.innerHTML = btnHtml;
+            });
         });
       }
 
